@@ -1,4 +1,4 @@
-const CACHE_NAME = "rp-site-v3";
+const CACHE_NAME = "rp-site-v4";
 const APP_SHELL = [
   "./",
   "./index.html",
