@@ -2,23 +2,88 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Meu Site</title>
-  <style>
-    body {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      max-width: 720px;
-      margin: 4rem auto;
-      padding: 0 1.5rem;
-      line-height: 1.6;
-      color: #1a1a1a;
-    }
-    h1 { font-size: 2rem; }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Rodrigo Pires — Produção Audiovisual</title>
+  <meta name="description" content="Produção audiovisual: captação, edição e finalização de vídeo. Verifique a qualidade do áudio do seu vídeo antes de enviar para edição.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
-  <h1>Site no ar 🎉</h1>
-  <p>Esta página está publicada via GitHub Pages e é servida diretamente deste repositório.</p>
-  <p>Edite <code>index.html</code> nesta pasta e envie (push) para atualizar o site.</p>
+  <div class="bg-glow"></div>
+
+  <header class="site-header">
+    <nav class="nav">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">RP</span>
+        Rodrigo Pires
+      </a>
+      <div class="nav-links">
+        <a href="index.html" class="active">Início</a>
+        <a href="verificar-audio.html">Verificar Áudio</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero container">
+      <div class="eyebrow"><span class="eyebrow-dot"></span> Captação &amp; Edição de Vídeo</div>
+      <h1>Produção audiovisual com <span>precisão técnica</span></h1>
+      <p class="hero-sub">Edição, correção de cor e finalização de vídeo — do material bruto gravado no celular à entrega pronta para publicação.</p>
+      <div class="hero-actions">
+        <a href="verificar-audio.html" class="btn btn-primary">Verificar áudio do meu vídeo</a>
+        <a href="#servicos" class="btn btn-ghost">Ver serviços</a>
+      </div>
+    </section>
+
+    <section class="section" id="servicos">
+      <div class="container">
+        <div class="section-head">
+          <h2>Serviços</h2>
+          <p>Do arquivo bruto à entrega final, com cuidado técnico em cada etapa.</p>
+        </div>
+        <div class="grid grid-3">
+          <div class="card">
+            <div class="card-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2"></rect></svg>
+            </div>
+            <h3>Edição de Vídeo</h3>
+            <p>Montagem, ritmo e narrativa — transformando as gravações em um vídeo coeso e envolvente.</p>
+          </div>
+          <div class="card">
+            <div class="card-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"></circle><circle cx="17.5" cy="10.5" r=".5"></circle><circle cx="8.5" cy="7.5" r=".5"></circle><circle cx="6.5" cy="12.5" r=".5"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C22 6.012 17.461 2 12 2z"></path></svg>
+            </div>
+            <h3>Correção de Cor</h3>
+            <p>Ajuste de cor e contraste para dar consistência visual e um acabamento profissional.</p>
+          </div>
+          <div class="card">
+            <div class="card-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+            </div>
+            <h3>Tratamento de Áudio</h3>
+            <p>Limpeza de ruído, equalização e nivelamento para um som limpo e pronto para publicação.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-alt">
+      <div class="container">
+        <div class="cta-banner">
+          <h2>Gravou pelo celular? Confira o áudio antes de enviar.</h2>
+          <p>Ferramenta gratuita que analisa o áudio do seu vídeo (MP4) diretamente no navegador e avisa se há saturação, para você regravar se precisar — antes de mandar para edição.</p>
+          <a href="verificar-audio.html" class="btn btn-primary">Abrir verificador de áudio</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>© 2026 Rodrigo Pires — Produção Audiovisual</p>
+    </div>
+  </footer>
 </body>
 </html>

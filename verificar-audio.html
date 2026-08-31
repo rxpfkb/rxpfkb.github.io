@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Verificar Áudio — Rodrigo Pires</title>
+  <meta name="description" content="Verifique se o áudio do seu vídeo gravado no celular está saturado antes de enviar para edição. Análise 100% no navegador, sem upload.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <div class="bg-glow"></div>
+
+  <header class="site-header">
+    <nav class="nav">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">RP</span>
+        Rodrigo Pires
+      </a>
+      <div class="nav-links">
+        <a href="index.html">Início</a>
+        <a href="verificar-audio.html" class="active">Verificar Áudio</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero container" style="padding-bottom: 24px;">
+      <div class="eyebrow"><span class="eyebrow-dot"></span> Ferramenta gratuita</div>
+      <h1>Seu áudio está <span>saturado?</span></h1>
+      <p class="hero-sub">Envie o vídeo gravado no celular (MP4) e descubra na hora se o áudio está estourado ou pronto para edição — a análise roda no seu navegador.</p>
+    </section>
+
+    <section class="container" style="padding-bottom: 80px; max-width: 640px;">
+      <div class="upload-zone" id="dropZone">
+        <div class="upload-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+        </div>
+        <h3>Arraste seu vídeo aqui</h3>
+        <p>ou toque para escolher um arquivo</p>
+        <button type="button" class="btn btn-primary" id="pickBtn">Escolher arquivo</button>
+        <input type="file" id="fileInput" accept="video/mp4,video/quicktime,audio/*,.mp4,.mov,.m4a,.wav,.aac">
+        <p class="upload-hint">Formatos aceitos: MP4 (Samsung S20/S21), MOV, M4A, WAV. Arquivos grandes (acima de 400 MB) podem levar mais tempo para analisar. Nenhum arquivo é enviado a servidor algum.</p>
+      </div>
+
+      <div class="file-chip status-hidden" id="fileChip">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 8-6 6-3-3-6 6"></path><path d="M21 3v6h-6"></path></svg>
+        <span id="fileChipName"></span>
+      </div>
+
+      <div class="progress-box status-hidden" id="progressBox">
+        <div class="spinner"></div>
+        <span id="progressText">Analisando…</span>
+      </div>
+
+      <div class="error-box status-hidden" id="errorBox"></div>
+
+      <div class="status-box status-hidden" id="statusBox">
+        <div class="status-header">
+          <div class="status-icon" id="statusIcon"></div>
+          <div>
+            <h3 id="statusTitle"></h3>
+            <p id="statusSubtitle"></p>
+          </div>
+        </div>
+        <div class="status-body">
+          <div class="metrics-row">
+            <div class="metric">
+              <div class="label">Pico</div>
+              <div class="value" id="metricPeak">—</div>
+            </div>
+            <div class="metric">
+              <div class="label">Nível médio</div>
+              <div class="value" id="metricRms">—</div>
+            </div>
+            <div class="metric">
+              <div class="label">Duração</div>
+              <div class="value" id="metricDuration">—</div>
+            </div>
+            <div class="metric">
+              <div class="label">Canais</div>
+              <div class="value" id="metricChannels">—</div>
+            </div>
+          </div>
+          <ul class="tips" id="tipsList"></ul>
+          <button type="button" class="btn btn-ghost btn-block" id="resetBtn" style="margin-top: 18px;">Analisar outro arquivo</button>
+        </div>
+      </div>
+
+      <div class="privacy-note">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        <span>Seu vídeo não é enviado para nenhum servidor. Toda a análise acontece localmente, no seu navegador, e o arquivo é descartado assim que você sai da página.</span>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>© 2026 Rodrigo Pires — Produção Audiovisual</p>
+    </div>
+  </footer>
+
+  <script src="assets/js/audio-check.js"></script>
+</body>
+</html>
