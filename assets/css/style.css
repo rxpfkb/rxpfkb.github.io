@@ -75,6 +75,46 @@ p { margin: 0 0 1em; color: var(--text-muted); }
     var(--bg);
 }
 
+/* ===== Install banner (PWA) ===== */
+.install-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 16px;
+  padding: 10px 16px;
+  background: var(--blue-wash);
+  border-bottom: 1px solid rgba(76, 141, 255, 0.25);
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.install-banner.status-hidden { display: none !important; }
+
+.install-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-sm {
+  padding: 8px 18px;
+  font-size: 0.85rem;
+}
+
+.install-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.install-dismiss:hover { color: var(--text); }
+
 /* ===== Header / Nav ===== */
 .site-header {
   position: sticky;
