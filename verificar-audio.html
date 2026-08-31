@@ -108,6 +108,13 @@
           <h3>Calibre antes de gravar</h3>
           <p>Fale no microfone no mesmo tom e distância que vai usar na gravação. Ajuste a posição até o nível ficar sempre na faixa verde.</p>
 
+          <label class="field-label" for="micDeviceSelect">Entrada de áudio</label>
+          <select class="mic-select" id="micDeviceSelect">
+            <option value="">Microfone padrão</option>
+          </select>
+
+          <canvas id="micWaveformCanvas" class="mic-waveform-canvas"></canvas>
+
           <div class="meter-wrap">
             <div class="meter-track">
               <div class="meter-zone meter-zone-green"></div>

@@ -38,6 +38,7 @@
   var micStartBtn = document.getElementById("micStartBtn");
   var micStopBtn = document.getElementById("micStopBtn");
   var micErrorBox = document.getElementById("micErrorBox");
+  var micWaveformCanvas = document.getElementById("micWaveformCanvas");
 
   // Metering approach (validated against 5 real Samsung S20 clips, cross-checked
   // against ffmpeg's EBU R128 loudness/true-peak filter — a broadcast-standard
@@ -570,8 +571,75 @@
     data: null,
     rafId: null,
     peakHoldDb: MIC_METER_FLOOR_DB,
-    peakHoldTime: 0
+    peakHoldTime: 0,
+    running: false
   };
+  var micDeviceSelect = document.getElementById("micDeviceSelect");
+
+  // Live reference waveform: a scrolling strip (like a hardware input monitor)
+  // rather than an instantaneous oscilloscope trace, so the user can see the
+  // actual shape of a few recent seconds — including brief peaks the eye
+  // would miss in a single 40ms snapshot — while they adjust mic position.
+  var MIC_WAVE_COLUMNS = 150;
+  var MIC_WAVE_PUSH_MS = 80; // ~12s of visible history at 150 columns
+  var micWaveAmps = new Float32Array(MIC_WAVE_COLUMNS);
+  var micWaveHot = new Uint8Array(MIC_WAVE_COLUMNS);
+  var micWaveLastPush = 0;
+  var micWaveThresholdLin = Math.pow(10, MIC_HOT_MAX_DB / 20);
+
+  function resetMicWaveform() {
+    micWaveAmps.fill(0);
+    micWaveHot.fill(0);
+    micWaveLastPush = 0;
+    drawMicWaveform();
+  }
+
+  function pushMicWaveColumn(peakLinear) {
+    micWaveAmps.copyWithin(0, 1);
+    micWaveHot.copyWithin(0, 1);
+    micWaveAmps[MIC_WAVE_COLUMNS - 1] = peakLinear;
+    micWaveHot[MIC_WAVE_COLUMNS - 1] = peakLinear >= micWaveThresholdLin ? 1 : 0;
+  }
+
+  function drawMicWaveform() {
+    if (!micWaveformCanvas) return;
+    var dpr = window.devicePixelRatio || 1;
+    var cssWidth = micWaveformCanvas.clientWidth || micWaveformCanvas.parentElement.clientWidth;
+    var cssHeight = 90;
+    micWaveformCanvas.width = Math.round(cssWidth * dpr);
+    micWaveformCanvas.height = Math.round(cssHeight * dpr);
+    var ctx = micWaveformCanvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    var normalStyle = getComputedStyle(document.documentElement).getPropertyValue("--blue-strong").trim() || "#7aabff";
+    var hotStyle = getComputedStyle(document.documentElement).getPropertyValue("--red").trim() || "#ef5b5b";
+    var midY = cssHeight / 2;
+    var colWidth = cssWidth / MIC_WAVE_COLUMNS;
+
+    for (var col = 0; col < MIC_WAVE_COLUMNS; col++) {
+      var amp = Math.min(1, micWaveAmps[col]);
+      var barH = Math.max(1, amp * (cssHeight / 2 - 4));
+      ctx.fillStyle = micWaveHot[col] ? hotStyle : normalStyle;
+      ctx.fillRect(col * colWidth, midY - barH, Math.max(1, colWidth - 0.5), barH * 2);
+    }
+  }
+
+  function refreshMicDeviceList(selectDeviceId) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    navigator.mediaDevices.enumerateDevices().then(function (devices) {
+      var inputs = devices.filter(function (d) { return d.kind === "audioinput"; });
+      if (!inputs.length) return;
+      micDeviceSelect.innerHTML = "";
+      inputs.forEach(function (d, i) {
+        var opt = document.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = d.label || ("Microfone " + (i + 1));
+        micDeviceSelect.appendChild(opt);
+      });
+      if (selectDeviceId) micDeviceSelect.value = selectDeviceId;
+    }).catch(function () { /* enumeration is best-effort */ });
+  }
 
   function dbToMeterPct(db) {
     var clamped = Math.max(MIC_METER_FLOOR_DB, Math.min(0, db));
@@ -613,17 +681,31 @@
       meterStatus.style.color = "";
     }
 
+    if (now - micWaveLastPush >= MIC_WAVE_PUSH_MS) {
+      pushMicWaveColumn(peak);
+      micWaveLastPush = now;
+    }
+    drawMicWaveform();
+
     mic.rafId = requestAnimationFrame(micMeterLoop);
   }
 
-  function startMicCalibration() {
+  function openMicStream(deviceId) {
     micErrorBox.classList.add("status-hidden");
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       micErrorBox.textContent = "Seu navegador não suporta acesso ao microfone.";
       micErrorBox.classList.remove("status-hidden");
       return;
     }
-    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
+    var audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+    if (deviceId) audioConstraints.deviceId = { exact: deviceId };
+
+    // Close the previous stream/track before opening a new one so switching
+    // devices doesn't leave the old microphone's LED/indicator stuck on.
+    if (mic.stream) mic.stream.getTracks().forEach(function (t) { t.stop(); });
+    if (mic.rafId) { cancelAnimationFrame(mic.rafId); mic.rafId = null; }
+
+    navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
       .then(function (stream) {
         mic.stream = stream;
         mic.ctx = getAudioContext();
@@ -633,17 +715,28 @@
         mic.data = new Float32Array(mic.analyser.fftSize);
         source.connect(mic.analyser);
         mic.peakHoldDb = MIC_METER_FLOOR_DB;
+        mic.running = true;
+        resetMicWaveform();
         micStartBtn.classList.add("status-hidden");
         micStopBtn.classList.remove("status-hidden");
         micMeterLoop();
+
+        var actualId = stream.getAudioTracks()[0] && stream.getAudioTracks()[0].getSettings().deviceId;
+        refreshMicDeviceList(actualId || deviceId);
       })
       .catch(function (err) {
+        mic.running = false;
         micErrorBox.textContent = "Não foi possível acessar o microfone. Verifique se você deu permissão ao navegador. Detalhe: " + (err && err.message ? err.message : err);
         micErrorBox.classList.remove("status-hidden");
       });
   }
 
+  function startMicCalibration() {
+    openMicStream(micDeviceSelect.value || undefined);
+  }
+
   function stopMicCalibration() {
+    mic.running = false;
     if (mic.rafId) { cancelAnimationFrame(mic.rafId); mic.rafId = null; }
     if (mic.stream) {
       mic.stream.getTracks().forEach(function (t) { t.stop(); });
@@ -654,12 +747,21 @@
     meterDb.textContent = "—";
     meterStatus.textContent = "Parado";
     meterStatus.style.color = "";
+    resetMicWaveform();
     micStartBtn.classList.remove("status-hidden");
     micStopBtn.classList.add("status-hidden");
   }
 
   micStartBtn.addEventListener("click", startMicCalibration);
   micStopBtn.addEventListener("click", stopMicCalibration);
+  micDeviceSelect.addEventListener("change", function () {
+    if (mic.running) openMicStream(micDeviceSelect.value || undefined);
+  });
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener("devicechange", function () {
+      if (mic.running) refreshMicDeviceList(micDeviceSelect.value);
+    });
+  }
   window.addEventListener("pagehide", stopMicCalibration);
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) stopMicCalibration();
