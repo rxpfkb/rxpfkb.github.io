@@ -39,6 +39,16 @@
   var micStopBtn = document.getElementById("micStopBtn");
   var micErrorBox = document.getElementById("micErrorBox");
   var micWaveformCanvas = document.getElementById("micWaveformCanvas");
+  var micResultBox = document.getElementById("micResultBox");
+  var micResultWaveformCanvas = document.getElementById("micResultWaveformCanvas");
+  var micResultWaveformHolder = document.getElementById("micResultWaveformHolder");
+  var micResultPlayhead = document.getElementById("micResultPlayhead");
+  var micResultPlayBtn = document.getElementById("micResultPlayBtn");
+  var micResultPlayIcon = document.getElementById("micResultPlayIcon");
+  var micResultPauseIcon = document.getElementById("micResultPauseIcon");
+  var micResultPlayerTime = document.getElementById("micResultPlayerTime");
+  var micResultPeak = document.getElementById("micResultPeak");
+  var micResultRms = document.getElementById("micResultRms");
 
   // Metering approach (validated against 5 real Samsung S20 clips, cross-checked
   // against ffmpeg's EBU R128 loudness/true-peak filter — a broadcast-standard
@@ -246,43 +256,39 @@
     };
   }
 
-  function drawWaveform(r) {
-    if (!waveformCanvas) return;
+  function drawWaveformTo(canvas, waveMax, waveHot, columnCount) {
+    if (!canvas) return;
     var dpr = window.devicePixelRatio || 1;
-    var cssWidth = waveformCanvas.clientWidth || waveformCanvas.parentElement.clientWidth;
+    var cssWidth = canvas.clientWidth || canvas.parentElement.clientWidth;
     var cssHeight = 100;
-    waveformCanvas.width = Math.round(cssWidth * dpr);
-    waveformCanvas.height = Math.round(cssHeight * dpr);
-    var ctx = waveformCanvas.getContext("2d");
+    canvas.width = Math.round(cssWidth * dpr);
+    canvas.height = Math.round(cssHeight * dpr);
+    var ctx = canvas.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssWidth, cssHeight);
 
-    var n = r.columnCount;
+    var n = columnCount;
     var barGap = cssWidth / n;
     var midY = cssHeight / 2;
     var normalStyle = getComputedStyle(document.documentElement).getPropertyValue("--blue-strong").trim() || "#7aabff";
     var hotStyle = getComputedStyle(document.documentElement).getPropertyValue("--red").trim() || "#ef5b5b";
 
     for (var col = 0; col < n; col++) {
-      var amp = Math.min(1, r.waveMax[col]);
+      var amp = Math.min(1, waveMax[col]);
       var barH = Math.max(1.5, amp * (cssHeight / 2 - 4));
       var x = col * barGap;
-      ctx.fillStyle = r.waveHot[col] ? hotStyle : normalStyle;
+      ctx.fillStyle = waveHot[col] ? hotStyle : normalStyle;
       ctx.fillRect(x, midY - barH, Math.max(1, barGap - 0.5), barH * 2);
     }
   }
 
-  // ===== Playback (play/pause/seek over the already-decoded buffer) =====
-  var playState = {
-    buffer: null,
-    sourceNode: null,
-    isPlaying: false,
-    startedAt: 0, // ctx.currentTime when playback began, minus offset already played
-    pausedAt: 0, // seconds into the buffer to resume from
-    rafId: null,
-    manualStop: false
-  };
+  function drawWaveform(r) {
+    drawWaveformTo(waveformCanvas, r.waveMax, r.waveHot, r.columnCount);
+  }
 
+  // ===== Playback (play/pause/seek over an already-decoded buffer) =====
+  // Factory so the file-check result and the live-calibration test recording
+  // can each have their own independent transport over the same waveform UI.
   function fmtClock(sec) {
     if (!isFinite(sec) || sec < 0) sec = 0;
     var m = Math.floor(sec / 60);
@@ -290,96 +296,139 @@
     return m + ":" + (s < 10 ? "0" : "") + s;
   }
 
-  function setupPlayback(buffer) {
-    stopPlayback();
-    playState.buffer = buffer;
-    playState.pausedAt = 0;
-    playerTime.textContent = "0:00 / " + fmtClock(buffer.duration);
-    waveformPlayhead.style.opacity = "0";
-  }
-
-  function currentPlaybackTime() {
-    if (!playState.buffer) return 0;
-    if (playState.isPlaying) {
-      var ctx = getAudioContext();
-      return Math.min(ctx.currentTime - playState.startedAt, playState.buffer.duration);
-    }
-    return playState.pausedAt;
-  }
-
-  function updatePlayhead() {
-    var t = currentPlaybackTime();
-    var ratio = playState.buffer ? t / playState.buffer.duration : 0;
-    waveformPlayhead.style.left = (ratio * 100) + "%";
-    waveformPlayhead.style.opacity = "1";
-    playerTime.textContent = fmtClock(t) + " / " + fmtClock(playState.buffer ? playState.buffer.duration : 0);
-    if (playState.isPlaying) {
-      if (t >= playState.buffer.duration - 0.02) {
-        stopPlayback();
-        playState.pausedAt = 0;
-        updatePlayhead();
-        return;
-      }
-      playState.rafId = requestAnimationFrame(updatePlayhead);
-    }
-  }
-
-  function startPlayback(fromTime) {
-    if (!playState.buffer) return;
-    var ctx = getAudioContext();
-    var node = ctx.createBufferSource();
-    node.buffer = playState.buffer;
-    node.connect(ctx.destination);
-    playState.manualStop = false;
-    node.onended = function () {
-      if (playState.manualStop) return;
-      playState.isPlaying = false;
-      playIcon.style.display = "";
-      pauseIcon.style.display = "none";
+  function createPlayer(els) {
+    var state = {
+      buffer: null,
+      sourceNode: null,
+      isPlaying: false,
+      startedAt: 0, // ctx.currentTime when playback began, minus offset already played
+      pausedAt: 0, // seconds into the buffer to resume from
+      rafId: null,
+      manualStop: false
     };
-    node.start(0, fromTime);
-    playState.sourceNode = node;
-    playState.startedAt = ctx.currentTime - fromTime;
-    playState.isPlaying = true;
-    playIcon.style.display = "none";
-    pauseIcon.style.display = "";
-    updatePlayhead();
-  }
 
-  function stopPlayback() {
-    if (playState.sourceNode) {
-      playState.manualStop = true;
-      try { playState.sourceNode.stop(); } catch (e) { /* already stopped */ }
-      playState.sourceNode = null;
+    function setIcons(playing) {
+      els.playIcon.style.display = playing ? "none" : "";
+      els.pauseIcon.style.display = playing ? "" : "none";
     }
-    if (playState.rafId) { cancelAnimationFrame(playState.rafId); playState.rafId = null; }
-    playState.isPlaying = false;
-    playIcon.style.display = "";
-    pauseIcon.style.display = "none";
-  }
 
-  function togglePlayback() {
-    if (!playState.buffer) return;
-    if (playState.isPlaying) {
-      playState.pausedAt = currentPlaybackTime();
-      stopPlayback();
-    } else {
-      var from = playState.pausedAt >= playState.buffer.duration ? 0 : playState.pausedAt;
-      startPlayback(from);
+    function setup(buffer) {
+      stop();
+      state.buffer = buffer;
+      state.pausedAt = 0;
+      els.timeText.textContent = "0:00 / " + fmtClock(buffer.duration);
+      els.playhead.style.opacity = "0";
     }
-  }
 
-  function seekTo(ratio) {
-    if (!playState.buffer) return;
-    var time = Math.max(0, Math.min(1, ratio)) * playState.buffer.duration;
-    if (playState.isPlaying) {
-      stopPlayback();
-      startPlayback(time);
-    } else {
-      playState.pausedAt = time;
+    function currentTime() {
+      if (!state.buffer) return 0;
+      if (state.isPlaying) {
+        var ctx = getAudioContext();
+        return Math.min(ctx.currentTime - state.startedAt, state.buffer.duration);
+      }
+      return state.pausedAt;
+    }
+
+    function updatePlayhead() {
+      var t = currentTime();
+      var ratio = state.buffer ? t / state.buffer.duration : 0;
+      els.playhead.style.left = (ratio * 100) + "%";
+      els.playhead.style.opacity = "1";
+      els.timeText.textContent = fmtClock(t) + " / " + fmtClock(state.buffer ? state.buffer.duration : 0);
+      if (state.isPlaying) {
+        if (t >= state.buffer.duration - 0.02) {
+          stop();
+          state.pausedAt = 0;
+          updatePlayhead();
+          return;
+        }
+        state.rafId = requestAnimationFrame(updatePlayhead);
+      }
+    }
+
+    function start(fromTime) {
+      if (!state.buffer) return;
+      var ctx = getAudioContext();
+      var node = ctx.createBufferSource();
+      node.buffer = state.buffer;
+      node.connect(ctx.destination);
+      state.manualStop = false;
+      node.onended = function () {
+        if (state.manualStop) return;
+        state.isPlaying = false;
+        setIcons(false);
+      };
+      node.start(0, fromTime);
+      state.sourceNode = node;
+      state.startedAt = ctx.currentTime - fromTime;
+      state.isPlaying = true;
+      setIcons(true);
       updatePlayhead();
     }
+
+    function stop() {
+      if (state.sourceNode) {
+        state.manualStop = true;
+        try { state.sourceNode.stop(); } catch (e) { /* already stopped */ }
+        state.sourceNode = null;
+      }
+      if (state.rafId) { cancelAnimationFrame(state.rafId); state.rafId = null; }
+      state.isPlaying = false;
+      setIcons(false);
+    }
+
+    function toggle() {
+      if (!state.buffer) return;
+      if (state.isPlaying) {
+        state.pausedAt = currentTime();
+        stop();
+      } else {
+        var from = state.pausedAt >= state.buffer.duration ? 0 : state.pausedAt;
+        start(from);
+      }
+    }
+
+    function seek(ratio) {
+      if (!state.buffer) return;
+      var time = Math.max(0, Math.min(1, ratio)) * state.buffer.duration;
+      if (state.isPlaying) {
+        stop();
+        start(time);
+      } else {
+        state.pausedAt = time;
+        updatePlayhead();
+      }
+    }
+
+    function seekFromEvent(e) {
+      var rect = els.holder.getBoundingClientRect();
+      var clientX = (e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX);
+      seek((clientX - rect.left) / rect.width);
+    }
+
+    els.playBtn.addEventListener("click", toggle);
+    els.holder.addEventListener("click", seekFromEvent);
+
+    return { setup: setup, stop: stop };
   }
+
+  var filePlayer = createPlayer({
+    holder: waveformHolder,
+    playhead: waveformPlayhead,
+    playBtn: playBtn,
+    playIcon: playIcon,
+    pauseIcon: pauseIcon,
+    timeText: playerTime
+  });
+
+  var micResultPlayer = createPlayer({
+    holder: micResultWaveformHolder,
+    playhead: micResultPlayhead,
+    playBtn: micResultPlayBtn,
+    playIcon: micResultPlayIcon,
+    pauseIcon: micResultPauseIcon,
+    timeText: micResultPlayerTime
+  });
 
   function renderResult(r) {
     statusBox.classList.remove("state-good", "state-low", "state-bad", "status-hidden");
@@ -395,7 +444,7 @@
     // statusBox must already be visible (status-hidden removed above) so the
     // canvas has a real layout width to measure before we draw into it.
     drawWaveform(r);
-    setupPlayback(r.audioBuffer);
+    filePlayer.setup(r.audioBuffer);
 
     if (r.status === "bad" && r.reason === "clip") {
       statusTitle.textContent = "Áudio com distorção (clipping)";
@@ -449,7 +498,7 @@
 
   function handleFile(file) {
     if (!file) return;
-    stopPlayback();
+    filePlayer.stop();
     resetUI();
 
     fileChipName.textContent = file.name + " (" + fmtBytes(file.size) + ")";
@@ -528,19 +577,10 @@
   });
 
   resetBtn.addEventListener("click", function () {
-    stopPlayback();
+    filePlayer.stop();
     fileInput.value = "";
     resetUI();
   });
-
-  playBtn.addEventListener("click", togglePlayback);
-
-  function seekFromEvent(e) {
-    var rect = waveformHolder.getBoundingClientRect();
-    var clientX = (e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX);
-    seekTo((clientX - rect.left) / rect.width);
-  }
-  waveformHolder.addEventListener("click", seekFromEvent);
 
   // ===== Tabs =====
   function setActiveTab(which) {
@@ -572,9 +612,25 @@
     rafId: null,
     peakHoldDb: MIC_METER_FLOOR_DB,
     peakHoldTime: 0,
-    running: false
+    running: false,
+    processor: null,
+    silentGain: null,
+    recChunks: [],
+    recSamples: 0,
+    recSampleRate: 48000
   };
   var micDeviceSelect = document.getElementById("micDeviceSelect");
+
+  // Test-recording capture: the live meter alone doesn't let the user hear
+  // back what was just captured. A ScriptProcessorNode taps the raw PCM into
+  // an in-memory buffer (never written to disk, never sent anywhere, gone on
+  // "Parar" or a new session) so the same waveform+player+analysis used for
+  // uploaded files can play back this test too. Routed through a silent gain
+  // node rather than straight to destination to avoid feeding the mic back
+  // out the speakers (howling feedback), while keeping the graph "live" so
+  // onaudioprocess actually fires.
+  var MIC_REC_MAX_SECONDS = 60;
+  var MIC_REC_MIN_SECONDS = 0.5;
 
   // Live reference waveform: a scrolling strip (like a hardware input monitor)
   // rather than an instantaneous oscilloscope trace, so the user can see the
@@ -704,6 +760,8 @@
     // devices doesn't leave the old microphone's LED/indicator stuck on.
     if (mic.stream) mic.stream.getTracks().forEach(function (t) { t.stop(); });
     if (mic.rafId) { cancelAnimationFrame(mic.rafId); mic.rafId = null; }
+    if (mic.processor) { mic.processor.disconnect(); mic.processor.onaudioprocess = null; mic.processor = null; }
+    if (mic.silentGain) { mic.silentGain.disconnect(); mic.silentGain = null; }
 
     navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
       .then(function (stream) {
@@ -717,9 +775,29 @@
         mic.peakHoldDb = MIC_METER_FLOOR_DB;
         mic.running = true;
         resetMicWaveform();
+        micResultBox.classList.add("status-hidden");
+        micResultPlayer.stop();
         micStartBtn.classList.add("status-hidden");
         micStopBtn.classList.remove("status-hidden");
         micMeterLoop();
+
+        mic.recChunks = [];
+        mic.recSamples = 0;
+        mic.recSampleRate = mic.ctx.sampleRate;
+        var processor = mic.ctx.createScriptProcessor(4096, 1, 1);
+        var silentGain = mic.ctx.createGain();
+        silentGain.gain.value = 0;
+        source.connect(processor);
+        processor.connect(silentGain);
+        silentGain.connect(mic.ctx.destination);
+        var recCap = MIC_REC_MAX_SECONDS * mic.recSampleRate;
+        processor.onaudioprocess = function (e) {
+          if (mic.recSamples >= recCap) return;
+          mic.recChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+          mic.recSamples += e.inputBuffer.getChannelData(0).length;
+        };
+        mic.processor = processor;
+        mic.silentGain = silentGain;
 
         var actualId = stream.getAudioTracks()[0] && stream.getAudioTracks()[0].getSettings().deviceId;
         refreshMicDeviceList(actualId || deviceId);
@@ -735,9 +813,34 @@
     openMicStream(micDeviceSelect.value || undefined);
   }
 
+  function buildRecordedBuffer() {
+    if (mic.recSamples < mic.recSampleRate * MIC_REC_MIN_SECONDS) return null;
+    var ctx = getAudioContext();
+    var buffer = ctx.createBuffer(1, mic.recSamples, mic.recSampleRate);
+    var channelData = buffer.getChannelData(0);
+    var offset = 0;
+    mic.recChunks.forEach(function (chunk) {
+      channelData.set(chunk, offset);
+      offset += chunk.length;
+    });
+    return buffer;
+  }
+
+  function renderMicResult(r) {
+    micResultBox.classList.remove("status-hidden");
+    micResultPeak.textContent = fmtDb(r.truePeakDb);
+    micResultRms.textContent = fmtDb(r.gatedLevelDb);
+    // micResultBox must already be visible (status-hidden removed above) so
+    // the canvas has a real layout width to measure before we draw into it.
+    drawWaveformTo(micResultWaveformCanvas, r.waveMax, r.waveHot, r.columnCount);
+    micResultPlayer.setup(r.audioBuffer);
+  }
+
   function stopMicCalibration() {
     mic.running = false;
     if (mic.rafId) { cancelAnimationFrame(mic.rafId); mic.rafId = null; }
+    if (mic.processor) { mic.processor.disconnect(); mic.processor.onaudioprocess = null; mic.processor = null; }
+    if (mic.silentGain) { mic.silentGain.disconnect(); mic.silentGain = null; }
     if (mic.stream) {
       mic.stream.getTracks().forEach(function (t) { t.stop(); });
       mic.stream = null;
@@ -750,6 +853,11 @@
     resetMicWaveform();
     micStartBtn.classList.remove("status-hidden");
     micStopBtn.classList.add("status-hidden");
+
+    var recordedBuffer = buildRecordedBuffer();
+    mic.recChunks = [];
+    mic.recSamples = 0;
+    if (recordedBuffer) renderMicResult(analyzeBuffer(recordedBuffer));
   }
 
   micStartBtn.addEventListener("click", startMicCalibration);

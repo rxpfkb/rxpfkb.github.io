@@ -39,16 +39,83 @@
   <main>
     <section class="tool-intro container">
       <h1>Verificador de áudio</h1>
-      <p>Confira se o áudio do seu vídeo está pronto para edição, ou calibre o microfone antes de gravar. Tudo no seu navegador — nada é enviado a servidor algum.</p>
+      <p>Calibre o microfone antes de gravar, ou confira se o áudio de um vídeo já gravado está pronto para edição. Tudo no seu navegador — nada é enviado a servidor algum.</p>
     </section>
 
     <section class="container tool-container">
       <div class="tabs" role="tablist">
-        <button type="button" class="tab-btn active" id="tabBtnCheck" role="tab" aria-selected="true">Verificar arquivo</button>
-        <button type="button" class="tab-btn" id="tabBtnCalibrate" role="tab" aria-selected="false">Calibrar ao vivo</button>
+        <button type="button" class="tab-btn active" id="tabBtnCalibrate" role="tab" aria-selected="true">Calibrar ao vivo</button>
+        <button type="button" class="tab-btn" id="tabBtnCheck" role="tab" aria-selected="false">Verificar arquivo</button>
       </div>
 
-      <div class="tab-panel" id="panelCheck">
+      <div class="tab-panel" id="panelCalibrate">
+        <div class="calibrate-card">
+          <h3>Calibre antes de gravar</h3>
+          <p>Fale no microfone no mesmo tom e distância que vai usar na gravação. Ajuste a posição até o nível ficar sempre na faixa verde.</p>
+
+          <label class="field-label" for="micDeviceSelect">Entrada de áudio</label>
+          <select class="mic-select" id="micDeviceSelect">
+            <option value="">Microfone padrão</option>
+          </select>
+
+          <canvas id="micWaveformCanvas" class="mic-waveform-canvas"></canvas>
+
+          <div class="meter-wrap">
+            <div class="meter-track">
+              <div class="meter-zone meter-zone-green"></div>
+              <div class="meter-zone meter-zone-yellow"></div>
+              <div class="meter-zone meter-zone-red"></div>
+              <div class="meter-fill" id="meterFill"></div>
+              <div class="meter-peak-hold" id="meterPeakHold"></div>
+            </div>
+            <div class="meter-labels">
+              <span>-40dB</span>
+              <span>-12dB</span>
+              <span>-3dB</span>
+              <span>0dB</span>
+            </div>
+          </div>
+
+          <div class="meter-readout">
+            <span class="meter-status" id="meterStatus">Parado</span>
+            <span class="meter-db" id="meterDb">—</span>
+          </div>
+
+          <button type="button" class="btn btn-primary btn-block" id="micStartBtn">Iniciar calibração</button>
+          <button type="button" class="btn btn-ghost btn-block status-hidden" id="micStopBtn">Parar</button>
+          <div class="error-box status-hidden" id="micErrorBox"></div>
+
+          <div class="mic-result status-hidden" id="micResultBox">
+            <h4>Sua gravação de teste</h4>
+            <div class="waveform-wrap">
+              <div class="waveform-canvas-holder" id="micResultWaveformHolder">
+                <canvas id="micResultWaveformCanvas" class="waveform-canvas"></canvas>
+                <div class="waveform-playhead" id="micResultPlayhead"></div>
+              </div>
+              <div class="player-controls">
+                <button type="button" class="player-btn" id="micResultPlayBtn" aria-label="Reproduzir">
+                  <svg id="micResultPlayIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+                  <svg id="micResultPauseIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><rect x="6" y="5" width="4" height="14"></rect><rect x="14" y="5" width="4" height="14"></rect></svg>
+                </button>
+                <span class="player-time" id="micResultPlayerTime">0:00 / 0:00</span>
+                <span class="player-hint">toque na onda para navegar</span>
+              </div>
+            </div>
+            <div class="metrics-row metrics-row-2">
+              <div class="metric">
+                <div class="label">True Peak</div>
+                <div class="value" id="micResultPeak">—</div>
+              </div>
+              <div class="metric">
+                <div class="label">Nível de fala</div>
+                <div class="value" id="micResultRms">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel status-hidden" id="panelCheck">
         <div class="upload-zone" id="dropZone">
           <div class="upload-icon">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
@@ -110,45 +177,6 @@
             <ul class="tips" id="tipsList"></ul>
             <button type="button" class="btn btn-ghost btn-block" id="resetBtn">Analisar outro arquivo</button>
           </div>
-        </div>
-      </div>
-
-      <div class="tab-panel status-hidden" id="panelCalibrate">
-        <div class="calibrate-card">
-          <h3>Calibre antes de gravar</h3>
-          <p>Fale no microfone no mesmo tom e distância que vai usar na gravação. Ajuste a posição até o nível ficar sempre na faixa verde.</p>
-
-          <label class="field-label" for="micDeviceSelect">Entrada de áudio</label>
-          <select class="mic-select" id="micDeviceSelect">
-            <option value="">Microfone padrão</option>
-          </select>
-
-          <canvas id="micWaveformCanvas" class="mic-waveform-canvas"></canvas>
-
-          <div class="meter-wrap">
-            <div class="meter-track">
-              <div class="meter-zone meter-zone-green"></div>
-              <div class="meter-zone meter-zone-yellow"></div>
-              <div class="meter-zone meter-zone-red"></div>
-              <div class="meter-fill" id="meterFill"></div>
-              <div class="meter-peak-hold" id="meterPeakHold"></div>
-            </div>
-            <div class="meter-labels">
-              <span>-40dB</span>
-              <span>-12dB</span>
-              <span>-3dB</span>
-              <span>0dB</span>
-            </div>
-          </div>
-
-          <div class="meter-readout">
-            <span class="meter-status" id="meterStatus">Parado</span>
-            <span class="meter-db" id="meterDb">—</span>
-          </div>
-
-          <button type="button" class="btn btn-primary btn-block" id="micStartBtn">Iniciar calibração</button>
-          <button type="button" class="btn btn-ghost btn-block status-hidden" id="micStopBtn">Parar</button>
-          <div class="error-box status-hidden" id="micErrorBox"></div>
         </div>
       </div>
 
