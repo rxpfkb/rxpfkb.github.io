@@ -15,11 +15,29 @@
   var statusSubtitle = document.getElementById("statusSubtitle");
   var metricPeak = document.getElementById("metricPeak");
   var metricRms = document.getElementById("metricRms");
-  var metricDuration = document.getElementById("metricDuration");
-  var metricChannels = document.getElementById("metricChannels");
+  var metricsCaption = document.getElementById("metricsCaption");
   var tipsList = document.getElementById("tipsList");
   var resetBtn = document.getElementById("resetBtn");
   var waveformCanvas = document.getElementById("waveformCanvas");
+  var waveformHolder = document.getElementById("waveformHolder");
+  var waveformPlayhead = document.getElementById("waveformPlayhead");
+  var playBtn = document.getElementById("playBtn");
+  var playIcon = document.getElementById("playIcon");
+  var pauseIcon = document.getElementById("pauseIcon");
+  var playerTime = document.getElementById("playerTime");
+
+  var tabBtnCheck = document.getElementById("tabBtnCheck");
+  var tabBtnCalibrate = document.getElementById("tabBtnCalibrate");
+  var panelCheck = document.getElementById("panelCheck");
+  var panelCalibrate = document.getElementById("panelCalibrate");
+
+  var meterFill = document.getElementById("meterFill");
+  var meterPeakHold = document.getElementById("meterPeakHold");
+  var meterStatus = document.getElementById("meterStatus");
+  var meterDb = document.getElementById("meterDb");
+  var micStartBtn = document.getElementById("micStartBtn");
+  var micStopBtn = document.getElementById("micStopBtn");
+  var micErrorBox = document.getElementById("micErrorBox");
 
   // Metering approach (validated against 5 real Samsung S20 clips, cross-checked
   // against ffmpeg's EBU R128 loudness/true-peak filter — a broadcast-standard
@@ -222,7 +240,8 @@
       reason: reason,
       waveMax: waveMax,
       waveHot: waveHot,
-      columnCount: columnCount
+      columnCount: columnCount,
+      audioBuffer: buffer
     };
   }
 
@@ -252,6 +271,115 @@
     }
   }
 
+  // ===== Playback (play/pause/seek over the already-decoded buffer) =====
+  var playState = {
+    buffer: null,
+    sourceNode: null,
+    isPlaying: false,
+    startedAt: 0, // ctx.currentTime when playback began, minus offset already played
+    pausedAt: 0, // seconds into the buffer to resume from
+    rafId: null,
+    manualStop: false
+  };
+
+  function fmtClock(sec) {
+    if (!isFinite(sec) || sec < 0) sec = 0;
+    var m = Math.floor(sec / 60);
+    var s = Math.floor(sec % 60);
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  function setupPlayback(buffer) {
+    stopPlayback();
+    playState.buffer = buffer;
+    playState.pausedAt = 0;
+    playerTime.textContent = "0:00 / " + fmtClock(buffer.duration);
+    waveformPlayhead.style.opacity = "0";
+  }
+
+  function currentPlaybackTime() {
+    if (!playState.buffer) return 0;
+    if (playState.isPlaying) {
+      var ctx = getAudioContext();
+      return Math.min(ctx.currentTime - playState.startedAt, playState.buffer.duration);
+    }
+    return playState.pausedAt;
+  }
+
+  function updatePlayhead() {
+    var t = currentPlaybackTime();
+    var ratio = playState.buffer ? t / playState.buffer.duration : 0;
+    waveformPlayhead.style.left = (ratio * 100) + "%";
+    waveformPlayhead.style.opacity = "1";
+    playerTime.textContent = fmtClock(t) + " / " + fmtClock(playState.buffer ? playState.buffer.duration : 0);
+    if (playState.isPlaying) {
+      if (t >= playState.buffer.duration - 0.02) {
+        stopPlayback();
+        playState.pausedAt = 0;
+        updatePlayhead();
+        return;
+      }
+      playState.rafId = requestAnimationFrame(updatePlayhead);
+    }
+  }
+
+  function startPlayback(fromTime) {
+    if (!playState.buffer) return;
+    var ctx = getAudioContext();
+    var node = ctx.createBufferSource();
+    node.buffer = playState.buffer;
+    node.connect(ctx.destination);
+    playState.manualStop = false;
+    node.onended = function () {
+      if (playState.manualStop) return;
+      playState.isPlaying = false;
+      playIcon.style.display = "";
+      pauseIcon.style.display = "none";
+    };
+    node.start(0, fromTime);
+    playState.sourceNode = node;
+    playState.startedAt = ctx.currentTime - fromTime;
+    playState.isPlaying = true;
+    playIcon.style.display = "none";
+    pauseIcon.style.display = "";
+    updatePlayhead();
+  }
+
+  function stopPlayback() {
+    if (playState.sourceNode) {
+      playState.manualStop = true;
+      try { playState.sourceNode.stop(); } catch (e) { /* already stopped */ }
+      playState.sourceNode = null;
+    }
+    if (playState.rafId) { cancelAnimationFrame(playState.rafId); playState.rafId = null; }
+    playState.isPlaying = false;
+    playIcon.style.display = "";
+    pauseIcon.style.display = "none";
+  }
+
+  function togglePlayback() {
+    if (!playState.buffer) return;
+    if (playState.isPlaying) {
+      playState.pausedAt = currentPlaybackTime();
+      stopPlayback();
+    } else {
+      var from = playState.pausedAt >= playState.buffer.duration ? 0 : playState.pausedAt;
+      startPlayback(from);
+    }
+  }
+
+  function seekTo(ratio) {
+    if (!playState.buffer) return;
+    var time = Math.max(0, Math.min(1, ratio)) * playState.buffer.duration;
+    if (playState.isPlaying) {
+      stopPlayback();
+      startPlayback(time);
+    } else {
+      playState.pausedAt = time;
+      updatePlayhead();
+    }
+  }
+
   function renderResult(r) {
     statusBox.classList.remove("state-good", "state-low", "state-bad", "status-hidden");
     statusBox.classList.add("state-" + r.status);
@@ -259,13 +387,14 @@
 
     metricPeak.textContent = fmtDb(r.truePeakDb);
     metricRms.textContent = fmtDb(r.gatedLevelDb);
-    metricDuration.textContent = fmtDuration(r.duration);
-    metricChannels.textContent = r.channels === 1 ? "Mono" : r.channels === 2 ? "Estéreo" : r.channels + " canais";
+    var channelsLabel = r.channels === 1 ? "Mono" : r.channels === 2 ? "Estéreo" : r.channels + " canais";
+    metricsCaption.textContent = fmtDuration(r.duration) + " · " + channelsLabel;
 
     tipsList.innerHTML = "";
     // statusBox must already be visible (status-hidden removed above) so the
     // canvas has a real layout width to measure before we draw into it.
     drawWaveform(r);
+    setupPlayback(r.audioBuffer);
 
     if (r.status === "bad" && r.reason === "clip") {
       statusTitle.textContent = "Áudio com distorção (clipping)";
@@ -319,6 +448,7 @@
 
   function handleFile(file) {
     if (!file) return;
+    stopPlayback();
     resetUI();
 
     fileChipName.textContent = file.name + " (" + fmtBytes(file.size) + ")";
@@ -338,6 +468,9 @@
       ? "Lendo arquivo grande (" + fmtBytes(file.size) + ") — isso pode levar um pouco mais de tempo…"
       : "Lendo arquivo…";
     progressBox.classList.remove("status-hidden");
+    requestAnimationFrame(function () {
+      progressBox.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
 
     file.arrayBuffer()
       .then(function (buf) {
@@ -354,6 +487,9 @@
       .then(function (result) {
         progressBox.classList.add("status-hidden");
         renderResult(result);
+        requestAnimationFrame(function () {
+          statusBox.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
       })
       .catch(function (err) {
         progressBox.classList.add("status-hidden");
@@ -391,7 +527,141 @@
   });
 
   resetBtn.addEventListener("click", function () {
+    stopPlayback();
     fileInput.value = "";
     resetUI();
+  });
+
+  playBtn.addEventListener("click", togglePlayback);
+
+  function seekFromEvent(e) {
+    var rect = waveformHolder.getBoundingClientRect();
+    var clientX = (e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX);
+    seekTo((clientX - rect.left) / rect.width);
+  }
+  waveformHolder.addEventListener("click", seekFromEvent);
+
+  // ===== Tabs =====
+  function setActiveTab(which) {
+    var checking = which === "check";
+    tabBtnCheck.classList.toggle("active", checking);
+    tabBtnCalibrate.classList.toggle("active", !checking);
+    tabBtnCheck.setAttribute("aria-selected", String(checking));
+    tabBtnCalibrate.setAttribute("aria-selected", String(!checking));
+    panelCheck.classList.toggle("status-hidden", !checking);
+    panelCalibrate.classList.toggle("status-hidden", checking);
+    if (checking) stopMicCalibration();
+  }
+  tabBtnCheck.addEventListener("click", function () { setActiveTab("check"); });
+  tabBtnCalibrate.addEventListener("click", function () { setActiveTab("calibrate"); });
+
+  // ===== Live microphone calibrator =====
+  // Real-time feedback only (no recording, nothing stored/sent) — a fast peak
+  // meter with a slow-decaying peak-hold marker, in the same spirit as a
+  // hardware PPM meter, so the user can see transient peaks they'd otherwise
+  // miss and adjust mic distance/gain before hitting record for real.
+  var MIC_LOW_MAX_DB = -12; // top of the green zone
+  var MIC_HOT_MAX_DB = -3; // top of the yellow zone, red above this
+  var MIC_METER_FLOOR_DB = -50;
+  var mic = {
+    stream: null,
+    ctx: null,
+    analyser: null,
+    data: null,
+    rafId: null,
+    peakHoldDb: MIC_METER_FLOOR_DB,
+    peakHoldTime: 0
+  };
+
+  function dbToMeterPct(db) {
+    var clamped = Math.max(MIC_METER_FLOOR_DB, Math.min(0, db));
+    return ((clamped - MIC_METER_FLOOR_DB) / (0 - MIC_METER_FLOOR_DB)) * 100;
+  }
+
+  function micMeterLoop() {
+    mic.analyser.getFloatTimeDomainData(mic.data);
+    var peak = 0;
+    for (var i = 0; i < mic.data.length; i++) {
+      var av = Math.abs(mic.data[i]);
+      if (av > peak) peak = av;
+    }
+    var db = dbfs(peak);
+    var now = performance.now();
+    if (db >= mic.peakHoldDb) {
+      mic.peakHoldDb = db;
+      mic.peakHoldTime = now;
+    } else if (now - mic.peakHoldTime > 800) {
+      mic.peakHoldDb = Math.max(MIC_METER_FLOOR_DB, mic.peakHoldDb - 0.6);
+    }
+
+    meterFill.style.width = dbToMeterPct(db) + "%";
+    meterPeakHold.style.left = dbToMeterPct(mic.peakHoldDb) + "%";
+    meterPeakHold.style.opacity = "1";
+    meterDb.textContent = db <= MIC_METER_FLOOR_DB ? "—" : fmtDb(db);
+
+    if (mic.peakHoldDb > MIC_HOT_MAX_DB) {
+      meterStatus.textContent = "Estourando — afaste o microfone";
+      meterStatus.style.color = "var(--red)";
+    } else if (mic.peakHoldDb > MIC_LOW_MAX_DB) {
+      meterStatus.textContent = "No limite — cuidado";
+      meterStatus.style.color = "var(--amber)";
+    } else if (db > MIC_METER_FLOOR_DB + 5) {
+      meterStatus.textContent = "Bom nível";
+      meterStatus.style.color = "var(--green)";
+    } else {
+      meterStatus.textContent = "Ouvindo…";
+      meterStatus.style.color = "";
+    }
+
+    mic.rafId = requestAnimationFrame(micMeterLoop);
+  }
+
+  function startMicCalibration() {
+    micErrorBox.classList.add("status-hidden");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      micErrorBox.textContent = "Seu navegador não suporta acesso ao microfone.";
+      micErrorBox.classList.remove("status-hidden");
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
+      .then(function (stream) {
+        mic.stream = stream;
+        mic.ctx = getAudioContext();
+        var source = mic.ctx.createMediaStreamSource(stream);
+        mic.analyser = mic.ctx.createAnalyser();
+        mic.analyser.fftSize = 2048;
+        mic.data = new Float32Array(mic.analyser.fftSize);
+        source.connect(mic.analyser);
+        mic.peakHoldDb = MIC_METER_FLOOR_DB;
+        micStartBtn.classList.add("status-hidden");
+        micStopBtn.classList.remove("status-hidden");
+        micMeterLoop();
+      })
+      .catch(function (err) {
+        micErrorBox.textContent = "Não foi possível acessar o microfone. Verifique se você deu permissão ao navegador. Detalhe: " + (err && err.message ? err.message : err);
+        micErrorBox.classList.remove("status-hidden");
+      });
+  }
+
+  function stopMicCalibration() {
+    if (mic.rafId) { cancelAnimationFrame(mic.rafId); mic.rafId = null; }
+    if (mic.stream) {
+      mic.stream.getTracks().forEach(function (t) { t.stop(); });
+      mic.stream = null;
+    }
+    meterFill.style.width = "0%";
+    meterPeakHold.style.opacity = "0";
+    meterDb.textContent = "—";
+    meterStatus.textContent = "Parado";
+    meterStatus.style.color = "";
+    micStartBtn.classList.remove("status-hidden");
+    micStopBtn.classList.add("status-hidden");
+  }
+
+  micStartBtn.addEventListener("click", startMicCalibration);
+  micStopBtn.addEventListener("click", stopMicCalibration);
+  window.addEventListener("pagehide", stopMicCalibration);
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) stopMicCalibration();
   });
 })();

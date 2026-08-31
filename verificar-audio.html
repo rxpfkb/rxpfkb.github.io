@@ -27,75 +27,117 @@
   </header>
 
   <main>
-    <section class="hero container" style="padding-bottom: 24px;">
-      <div class="eyebrow"><span class="eyebrow-dot"></span> Ferramenta gratuita</div>
-      <h1>Seu áudio está <span>saturado?</span></h1>
-      <p class="hero-sub">Envie o vídeo gravado no celular (MP4) e descubra na hora se o áudio está estourado ou pronto para edição — a análise roda no seu navegador.</p>
+    <section class="tool-intro container">
+      <h1>Verificador de áudio</h1>
+      <p>Confira se o áudio do seu vídeo está pronto para edição, ou calibre o microfone antes de gravar. Tudo no seu navegador — nada é enviado a servidor algum.</p>
     </section>
 
-    <section class="container" style="padding-bottom: 80px; max-width: 640px;">
-      <div class="upload-zone" id="dropZone">
-        <div class="upload-icon">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+    <section class="container tool-container">
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab-btn active" id="tabBtnCheck" role="tab" aria-selected="true">Verificar arquivo</button>
+        <button type="button" class="tab-btn" id="tabBtnCalibrate" role="tab" aria-selected="false">Calibrar ao vivo</button>
+      </div>
+
+      <div class="tab-panel" id="panelCheck">
+        <div class="upload-zone" id="dropZone">
+          <div class="upload-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          </div>
+          <h3>Arraste seu vídeo aqui</h3>
+          <p>ou toque para escolher um arquivo (MP4, MOV, M4A, WAV)</p>
+          <button type="button" class="btn btn-primary" id="pickBtn">Escolher arquivo</button>
+          <input type="file" id="fileInput" accept="video/mp4,video/quicktime,audio/*,.mp4,.mov,.m4a,.wav,.aac">
         </div>
-        <h3>Arraste seu vídeo aqui</h3>
-        <p>ou toque para escolher um arquivo</p>
-        <button type="button" class="btn btn-primary" id="pickBtn">Escolher arquivo</button>
-        <input type="file" id="fileInput" accept="video/mp4,video/quicktime,audio/*,.mp4,.mov,.m4a,.wav,.aac">
-        <p class="upload-hint">Formatos aceitos: MP4 (Samsung S20/S21), MOV, M4A, WAV. Arquivos grandes (acima de 400 MB) podem levar mais tempo para analisar. Nenhum arquivo é enviado a servidor algum.</p>
-      </div>
 
-      <div class="file-chip status-hidden" id="fileChip">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 8-6 6-3-3-6 6"></path><path d="M21 3v6h-6"></path></svg>
-        <span id="fileChipName"></span>
-      </div>
+        <div class="file-chip status-hidden" id="fileChip">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 8-6 6-3-3-6 6"></path><path d="M21 3v6h-6"></path></svg>
+          <span id="fileChipName"></span>
+        </div>
 
-      <div class="progress-box status-hidden" id="progressBox">
-        <div class="spinner"></div>
-        <span id="progressText">Analisando…</span>
-      </div>
+        <div class="progress-box status-hidden" id="progressBox">
+          <div class="spinner"></div>
+          <span id="progressText">Analisando…</span>
+        </div>
 
-      <div class="error-box status-hidden" id="errorBox"></div>
+        <div class="error-box status-hidden" id="errorBox"></div>
 
-      <div class="status-box status-hidden" id="statusBox">
-        <div class="status-header">
-          <div class="status-icon" id="statusIcon"></div>
-          <div>
-            <h3 id="statusTitle"></h3>
-            <p id="statusSubtitle"></p>
+        <div class="status-box status-hidden" id="statusBox">
+          <div class="status-header">
+            <div class="status-icon" id="statusIcon"></div>
+            <div>
+              <h3 id="statusTitle"></h3>
+              <p id="statusSubtitle"></p>
+            </div>
+          </div>
+          <div class="status-body">
+            <div class="waveform-wrap">
+              <div class="waveform-canvas-holder" id="waveformHolder">
+                <canvas id="waveformCanvas" class="waveform-canvas"></canvas>
+                <div class="waveform-playhead" id="waveformPlayhead"></div>
+              </div>
+              <div class="player-controls">
+                <button type="button" class="player-btn" id="playBtn" aria-label="Reproduzir">
+                  <svg id="playIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+                  <svg id="pauseIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><rect x="6" y="5" width="4" height="14"></rect><rect x="14" y="5" width="4" height="14"></rect></svg>
+                </button>
+                <span class="player-time" id="playerTime">0:00 / 0:00</span>
+                <span class="player-hint">toque na onda para navegar</span>
+              </div>
+            </div>
+
+            <div class="metrics-row metrics-row-2">
+              <div class="metric">
+                <div class="label">True Peak</div>
+                <div class="value" id="metricPeak">—</div>
+              </div>
+              <div class="metric">
+                <div class="label">Nível de fala</div>
+                <div class="value" id="metricRms">—</div>
+              </div>
+            </div>
+            <p class="metrics-caption" id="metricsCaption"></p>
+
+            <ul class="tips" id="tipsList"></ul>
+            <button type="button" class="btn btn-ghost btn-block" id="resetBtn">Analisar outro arquivo</button>
           </div>
         </div>
-        <div class="status-body">
-          <div class="waveform-wrap">
-            <canvas id="waveformCanvas" class="waveform-canvas"></canvas>
-            <div class="waveform-legend"><span class="dot dot-clip"></span> trechos sem margem (perto do teto digital)</div>
+      </div>
+
+      <div class="tab-panel status-hidden" id="panelCalibrate">
+        <div class="calibrate-card">
+          <h3>Calibre antes de gravar</h3>
+          <p>Fale no microfone no mesmo tom e distância que vai usar na gravação. Ajuste a posição até o nível ficar sempre na faixa verde.</p>
+
+          <div class="meter-wrap">
+            <div class="meter-track">
+              <div class="meter-zone meter-zone-green"></div>
+              <div class="meter-zone meter-zone-yellow"></div>
+              <div class="meter-zone meter-zone-red"></div>
+              <div class="meter-fill" id="meterFill"></div>
+              <div class="meter-peak-hold" id="meterPeakHold"></div>
+            </div>
+            <div class="meter-labels">
+              <span>-40dB</span>
+              <span>-12dB</span>
+              <span>-3dB</span>
+              <span>0dB</span>
+            </div>
           </div>
-          <div class="metrics-row">
-            <div class="metric">
-              <div class="label">True Peak</div>
-              <div class="value" id="metricPeak">—</div>
-            </div>
-            <div class="metric">
-              <div class="label">Nível de fala</div>
-              <div class="value" id="metricRms">—</div>
-            </div>
-            <div class="metric">
-              <div class="label">Duração</div>
-              <div class="value" id="metricDuration">—</div>
-            </div>
-            <div class="metric">
-              <div class="label">Canais</div>
-              <div class="value" id="metricChannels">—</div>
-            </div>
+
+          <div class="meter-readout">
+            <span class="meter-status" id="meterStatus">Parado</span>
+            <span class="meter-db" id="meterDb">—</span>
           </div>
-          <ul class="tips" id="tipsList"></ul>
-          <button type="button" class="btn btn-ghost btn-block" id="resetBtn" style="margin-top: 18px;">Analisar outro arquivo</button>
+
+          <button type="button" class="btn btn-primary btn-block" id="micStartBtn">Iniciar calibração</button>
+          <button type="button" class="btn btn-ghost btn-block status-hidden" id="micStopBtn">Parar</button>
+          <div class="error-box status-hidden" id="micErrorBox"></div>
         </div>
       </div>
 
       <div class="privacy-note">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-        <span>Seu vídeo não é enviado para nenhum servidor. Toda a análise acontece localmente, no seu navegador, e o arquivo é descartado assim que você sai da página.</span>
+        <span>Nada é enviado para servidor algum. O vídeo e o áudio do microfone ficam só no seu navegador e somem quando você sai da página.</span>
       </div>
     </section>
   </main>
