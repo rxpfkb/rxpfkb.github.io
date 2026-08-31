@@ -66,13 +66,17 @@
           </div>
         </div>
         <div class="status-body">
+          <div class="waveform-wrap">
+            <canvas id="waveformCanvas" class="waveform-canvas"></canvas>
+            <div class="waveform-legend"><span class="dot dot-clip"></span> trechos sem margem (perto do teto digital)</div>
+          </div>
           <div class="metrics-row">
             <div class="metric">
-              <div class="label">Pico</div>
+              <div class="label">True Peak</div>
               <div class="value" id="metricPeak">—</div>
             </div>
             <div class="metric">
-              <div class="label">Nível médio</div>
+              <div class="label">Nível de fala</div>
               <div class="value" id="metricRms">—</div>
             </div>
             <div class="metric">

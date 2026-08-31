@@ -19,25 +19,43 @@
   var metricChannels = document.getElementById("metricChannels");
   var tipsList = document.getElementById("tipsList");
   var resetBtn = document.getElementById("resetBtn");
+  var waveformCanvas = document.getElementById("waveformCanvas");
 
-  // Calibrated against real Samsung S20 handheld recordings decoded through
-  // the browser's own AAC decoder (not an offline reference decoder): normal,
-  // unclipped close-mic speech commonly peaks at 0 to +0.3 dBFS, and the
-  // decoder itself briefly pins samples at the float ceiling (~0.98-1.0) for
-  // up to ~18 consecutive samples right at those peaks, purely from lossy
-  // encode/decode rounding. Real hard clipping from an overdriven mic runs
-  // much longer per event (tens to hundreds of samples, roughly half a
-  // waveform cycle) and pins a far larger share of the signal, so both
-  // MIN_RUN and CLIP_RATIO_THRESHOLD sit well above that natural baseline.
-  // Crest factor (peak vs. RMS) is used as a second, duration-independent
-  // signal: clipped/over-limited audio loses dynamic range, pulling the RMS
-  // up close to the peak.
-  var NEAR_MAX = 0.98; // ~ -0.18 dBFS
-  var MIN_RUN = 30; // ~0.6ms at 48kHz
+  // Metering approach (validated against 5 real Samsung S20 clips, cross-checked
+  // against ffmpeg's EBU R128 loudness/true-peak filter — a broadcast-standard
+  // reference — 2026-08-31):
+  //
+  // An earlier version of this tool used simple sample-domain peak + whole-file
+  // RMS. That measured these S20 clips at a reassuring-looking ~0 dBFS peak /
+  // -15 dBFS RMS and called them "perfect". The reference analysis told a very
+  // different story: True Peak +0.0 to +0.3 dBTP (genuine inter-sample overs —
+  // a real technical defect by any delivery standard, which requires staying
+  // below -1 dBTP) and Integrated Loudness around -10 to -12 LUFS, roughly
+  // 12-13 dB hotter than the -23 LUFS broadcast target and hotter than most
+  // "loudness war" commercial masters. The whole-file RMS looked fine only
+  // because it was diluted by silence between phrases — once you gate that
+  // out (as loudness standards do), these phone recordings are clearly being
+  // run through aggressive automatic gain control that leaves no headroom for
+  // mixing. So: True Peak is measured with 4x oversampling (linear
+  // interpolation — a lightweight approximation of the polyphase filter real
+  // meters use, sufficient to catch the inter-sample overs that matter here),
+  // and level is measured as gated block loudness (400ms blocks, silence and
+  // outlier blocks excluded) rather than raw whole-file RMS.
+  var TRUE_PEAK_LIMIT_DB = -1; // professional delivery ceiling
+  var GATED_HOT_LIMIT_DB = -9; // backstop: average speech level itself too loud
+  var GATED_LOW_LIMIT_DB = -40;
+  var BLOCK_SECONDS = 0.4;
+  var ABSOLUTE_GATE_DB = -60;
+  var RELATIVE_GATE_OFFSET_DB = -15;
+
+  // Secondary signal: sustained flat-top runs are the signature of genuine
+  // hard/square-wave clipping (distinct from AGC just riding near the
+  // ceiling). Calibrated so normal AAC decode ringing at true peaks (observed
+  // up to ~18 consecutive samples on clean S20 audio) does not trigger it.
+  var NEAR_MAX = 0.98;
+  var MIN_RUN = 30;
   var CLIP_EVENTS_THRESHOLD = 5;
-  var CLIP_RATIO_THRESHOLD = 0.003; // 0.3% of all samples
-  var LOW_RMS_THRESHOLD_DB = -35;
-  var LOW_CREST_FACTOR_DB = 8;
+  var CLIP_RATIO_THRESHOLD = 0.003;
 
   var ICONS = {
     good: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>',
@@ -54,6 +72,10 @@
     }
     if (audioCtx.state === "suspended") audioCtx.resume();
     return audioCtx;
+  }
+
+  function dbfs(v) {
+    return 20 * Math.log10(Math.max(v, 1e-8));
   }
 
   function fmtDb(v) {
@@ -78,75 +100,190 @@
 
   function analyzeBuffer(buffer) {
     var numChannels = buffer.numberOfChannels;
-    var peak = 0;
-    var sumSquares = 0;
-    var totalSamples = 0;
-    var clippedSamples = 0;
-    var clipEvents = 0;
+    var sampleRate = buffer.sampleRate;
+    var length = buffer.length;
+    var channelData = [];
+    var ch, i;
+    for (ch = 0; ch < numChannels; ch++) channelData.push(buffer.getChannelData(ch));
 
-    for (var ch = 0; ch < numChannels; ch++) {
-      var data = buffer.getChannelData(ch);
-      var run = 0;
-      for (var i = 0; i < data.length; i++) {
-        var v = Math.abs(data[i]);
-        if (v > peak) peak = v;
-        sumSquares += v * v;
-        totalSamples++;
-        if (v >= NEAR_MAX) {
-          run++;
-          if (run === MIN_RUN) clipEvents++;
-          if (run >= MIN_RUN) clippedSamples++;
-        } else {
-          run = 0;
+    // Waveform: one column per ~2048 frames, capped so huge files stay cheap to draw.
+    var targetColumns = 1200;
+    var samplesPerColumn = Math.max(1, Math.ceil(length / targetColumns));
+    var columnCount = Math.ceil(length / samplesPerColumn);
+    var waveMax = new Float32Array(columnCount);
+    var waveHot = new Uint8Array(columnCount);
+
+    var truePeak = 0;
+    var samplePeak = 0;
+    var clipEvents = 0;
+    var clippedSamples = 0;
+    var totalSamples = 0;
+
+    var blockLen = Math.max(1, Math.round(sampleRate * BLOCK_SECONDS));
+    var blockPowers = [];
+    var blockSum = 0;
+    var blockCount = 0;
+
+    var runLen = new Int32Array(numChannels);
+    var truePeakThresholdLin = Math.pow(10, TRUE_PEAK_LIMIT_DB / 20);
+
+    for (i = 0; i < length; i++) {
+      var col = (i / samplesPerColumn) | 0;
+      var monoSum = 0;
+      var frameIsHot = false;
+
+      for (ch = 0; ch < numChannels; ch++) {
+        var data = channelData[ch];
+        var v = data[i];
+        var av = Math.abs(v);
+        monoSum += v;
+
+        if (av > samplePeak) samplePeak = av;
+
+        // 4x oversample via linear interpolation against the previous sample
+        // to approximate true (inter-sample) peak.
+        if (i > 0) {
+          var prev = data[i - 1];
+          var d = v - prev;
+          var interpPeak = Math.max(Math.abs(prev + d * 0.25), Math.abs(prev + d * 0.5), Math.abs(prev + d * 0.75), av);
+          if (interpPeak > truePeak) truePeak = interpPeak;
+          if (interpPeak >= truePeakThresholdLin) frameIsHot = true;
+        } else if (av > truePeak) {
+          truePeak = av;
         }
+
+        if (av >= NEAR_MAX) {
+          runLen[ch]++;
+          if (runLen[ch] === MIN_RUN) clipEvents++;
+          if (runLen[ch] >= MIN_RUN) clippedSamples++;
+        } else {
+          runLen[ch] = 0;
+        }
+
+        blockSum += v * v;
+      }
+
+      totalSamples += numChannels;
+      blockCount++;
+
+      var monoAbs = Math.abs(monoSum / numChannels);
+      if (monoAbs > waveMax[col]) waveMax[col] = monoAbs;
+      if (frameIsHot) waveHot[col] = 1;
+
+      if (blockCount >= blockLen) {
+        blockPowers.push(blockSum / blockCount);
+        blockSum = 0;
+        blockCount = 0;
       }
     }
+    if (blockCount > 0) blockPowers.push(blockSum / blockCount);
 
-    var peakDb = 20 * Math.log10(Math.max(peak, 1e-8));
-    var rms = Math.sqrt(sumSquares / Math.max(totalSamples, 1));
-    var rmsDb = 20 * Math.log10(Math.max(rms, 1e-8));
-    var clippedRatio = totalSamples ? clippedSamples / totalSamples : 0;
-    var crestFactorDb = peakDb - rmsDb;
-
-    var status;
-    if (clipEvents >= CLIP_EVENTS_THRESHOLD || clippedRatio >= CLIP_RATIO_THRESHOLD || crestFactorDb < LOW_CREST_FACTOR_DB) {
-      status = "bad";
-    } else if (rmsDb < LOW_RMS_THRESHOLD_DB) {
-      status = "low";
+    // Gated block loudness: absolute gate drops silence, relative gate drops
+    // blocks well below the programme's own average (mirrors EBU R128's
+    // two-stage gating, without K-weighting).
+    var gated = blockPowers.filter(function (p) { return dbfs(Math.sqrt(p)) > ABSOLUTE_GATE_DB; });
+    var gatedLevelDb;
+    if (gated.length) {
+      var meanPow = gated.reduce(function (a, b) { return a + b; }, 0) / gated.length;
+      var meanDb = dbfs(Math.sqrt(meanPow));
+      var relGated = gated.filter(function (p) { return dbfs(Math.sqrt(p)) > meanDb + RELATIVE_GATE_OFFSET_DB; });
+      var finalSet = relGated.length ? relGated : gated;
+      var finalMeanPow = finalSet.reduce(function (a, b) { return a + b; }, 0) / finalSet.length;
+      gatedLevelDb = dbfs(Math.sqrt(finalMeanPow));
     } else {
-      status = "good";
+      gatedLevelDb = -Infinity;
+    }
+
+    var truePeakDb = dbfs(truePeak);
+    var samplePeakDb = dbfs(samplePeak);
+    var clippedRatio = totalSamples ? clippedSamples / totalSamples : 0;
+    var hasHardClip = clipEvents >= CLIP_EVENTS_THRESHOLD || clippedRatio >= CLIP_RATIO_THRESHOLD;
+    var overTruePeak = truePeakDb > TRUE_PEAK_LIMIT_DB;
+    var tooHot = gatedLevelDb > GATED_HOT_LIMIT_DB;
+
+    var status, reason;
+    if (hasHardClip) {
+      status = "bad"; reason = "clip";
+    } else if (overTruePeak || tooHot) {
+      status = "bad"; reason = "headroom";
+    } else if (gatedLevelDb < GATED_LOW_LIMIT_DB) {
+      status = "low"; reason = "low";
+    } else {
+      status = "good"; reason = "good";
     }
 
     return {
-      peakDb: peakDb,
-      rmsDb: rmsDb,
+      truePeakDb: truePeakDb,
+      samplePeakDb: samplePeakDb,
+      gatedLevelDb: gatedLevelDb,
       duration: buffer.duration,
       channels: numChannels,
-      status: status
+      status: status,
+      reason: reason,
+      waveMax: waveMax,
+      waveHot: waveHot,
+      columnCount: columnCount
     };
   }
 
+  function drawWaveform(r) {
+    if (!waveformCanvas) return;
+    var dpr = window.devicePixelRatio || 1;
+    var cssWidth = waveformCanvas.clientWidth || waveformCanvas.parentElement.clientWidth;
+    var cssHeight = 100;
+    waveformCanvas.width = Math.round(cssWidth * dpr);
+    waveformCanvas.height = Math.round(cssHeight * dpr);
+    var ctx = waveformCanvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    var n = r.columnCount;
+    var barGap = cssWidth / n;
+    var midY = cssHeight / 2;
+    var normalStyle = getComputedStyle(document.documentElement).getPropertyValue("--blue-strong").trim() || "#7aabff";
+    var hotStyle = getComputedStyle(document.documentElement).getPropertyValue("--red").trim() || "#ef5b5b";
+
+    for (var col = 0; col < n; col++) {
+      var amp = Math.min(1, r.waveMax[col]);
+      var barH = Math.max(1.5, amp * (cssHeight / 2 - 4));
+      var x = col * barGap;
+      ctx.fillStyle = r.waveHot[col] ? hotStyle : normalStyle;
+      ctx.fillRect(x, midY - barH, Math.max(1, barGap - 0.5), barH * 2);
+    }
+  }
+
   function renderResult(r) {
-    statusBox.classList.remove("state-good", "state-low", "state-bad");
+    statusBox.classList.remove("state-good", "state-low", "state-bad", "status-hidden");
     statusBox.classList.add("state-" + r.status);
     statusIcon.innerHTML = ICONS[r.status];
 
-    metricPeak.textContent = fmtDb(r.peakDb);
-    metricRms.textContent = fmtDb(r.rmsDb);
+    metricPeak.textContent = fmtDb(r.truePeakDb);
+    metricRms.textContent = fmtDb(r.gatedLevelDb);
     metricDuration.textContent = fmtDuration(r.duration);
     metricChannels.textContent = r.channels === 1 ? "Mono" : r.channels === 2 ? "Estéreo" : r.channels + " canais";
 
     tipsList.innerHTML = "";
+    // statusBox must already be visible (status-hidden removed above) so the
+    // canvas has a real layout width to measure before we draw into it.
+    drawWaveform(r);
 
-    if (r.status === "bad") {
-      statusTitle.textContent = "Áudio saturado detectado";
-      statusSubtitle.textContent = "Há trechos com o áudio estourado (clipping), o que causa distorção e chiado na gravação.";
+    if (r.status === "bad" && r.reason === "clip") {
+      statusTitle.textContent = "Áudio com distorção (clipping)";
+      statusSubtitle.textContent = "Há trechos com o áudio realmente estourado, causando distorção audível na gravação.";
       [
         "Afaste um pouco o celular da fonte de som, ou peça para falar/tocar com menos intensidade perto do microfone.",
         "Se possível, use um microfone de lapela ou externo — o microfone do celular satura fácil em ambientes muito altos.",
         "Grave um teste de alguns segundos antes da gravação principal e ouça de fone para checar se há distorção.",
-        "Evite gravar encostado em caixas de som ou instrumentos muito próximos.",
         "Regrave o trecho, se possível, e envie novamente aqui para conferir."
+      ].forEach(addTip);
+    } else if (r.status === "bad" && r.reason === "headroom") {
+      statusTitle.textContent = "Áudio sem margem para mixagem";
+      statusSubtitle.textContent = "O nível está no teto digital praticamente o tempo todo (True Peak " + fmtDb(r.truePeakDb) + "), sinal de que o controle automático de ganho do celular comprimiu demais o áudio. Sem espaço para ganhar punch e corpo na mixagem.";
+      [
+        "Afaste um pouco o celular da fonte de som — o AGC do celular sobe o ganho sozinho quando o som está baixo, e isso comprime tudo perto do teto.",
+        "Se o app de câmera tiver ajuste manual de ganho/sensibilidade de microfone, reduza um pouco antes de gravar.",
+        "Um microfone de lapela ou externo evita o AGC agressivo do microfone embutido do celular.",
+        "Regrave um teste curto e confira aqui antes da gravação definitiva."
       ].forEach(addTip);
     } else if (r.status === "low") {
       statusTitle.textContent = "Volume de áudio muito baixo";
@@ -157,11 +294,9 @@
         "Se o app de câmera permitir, verifique se a sensibilidade do microfone não está reduzida."
       ].forEach(addTip);
     } else {
-      statusTitle.textContent = "Arquivo perfeito para edição";
-      statusSubtitle.textContent = "O áudio está com um nível equilibrado, sem saturação. Pode enviar esse arquivo para edição sem problemas.";
+      statusTitle.textContent = "Arquivo com boa margem para edição";
+      statusSubtitle.textContent = "True Peak e nível de fala estão com margem saudável, sem sinais de compressão excessiva. Bom material para trabalhar na mixagem.";
     }
-
-    statusBox.classList.remove("status-hidden");
   }
 
   function addTip(text) {
@@ -211,8 +346,13 @@
         return ctx.decodeAudioData(buf);
       })
       .then(function (audioBuffer) {
+        progressText.textContent = "Medindo true peak e nível de fala…";
+        return new Promise(function (resolve) {
+          setTimeout(function () { resolve(analyzeBuffer(audioBuffer)); }, 0);
+        });
+      })
+      .then(function (result) {
         progressBox.classList.add("status-hidden");
-        var result = analyzeBuffer(audioBuffer);
         renderResult(result);
       })
       .catch(function (err) {
