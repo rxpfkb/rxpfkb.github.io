@@ -89,35 +89,44 @@
             <span class="meter-db" id="meterDb">—</span>
           </div>
 
-          <button type="button" class="btn btn-primary btn-block" id="micStartBtn">Iniciar calibração</button>
+          <button type="button" class="btn btn-primary btn-block" id="micStartBtn">Iniciar monitoramento</button>
           <button type="button" class="btn btn-ghost btn-block status-hidden" id="micStopBtn">Parar</button>
           <div class="error-box status-hidden" id="micErrorBox"></div>
 
-          <div class="mic-result status-hidden" id="micResultBox">
-            <h4>Sua gravação de teste</h4>
-            <div class="waveform-wrap">
-              <div class="waveform-canvas-holder" id="micResultWaveformHolder">
-                <canvas id="micResultWaveformCanvas" class="waveform-canvas"></canvas>
-                <div class="waveform-playhead" id="micResultPlayhead"></div>
-              </div>
-              <div class="player-controls">
-                <button type="button" class="player-btn" id="micResultPlayBtn" aria-label="Reproduzir">
-                  <svg id="micResultPlayIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
-                  <svg id="micResultPauseIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><rect x="6" y="5" width="4" height="14"></rect><rect x="14" y="5" width="4" height="14"></rect></svg>
-                </button>
-                <span class="player-time" id="micResultPlayerTime">0:00 / 0:00</span>
-                <span class="player-hint">toque na onda para navegar</span>
+          <div class="mic-result status-box status-hidden" id="micResultBox">
+            <div class="status-header">
+              <div class="status-icon" id="micResultStatusIcon"></div>
+              <div>
+                <h3 id="micResultStatusTitle"></h3>
+                <p id="micResultStatusSubtitle"></p>
               </div>
             </div>
-            <div class="metrics-row metrics-row-2">
-              <div class="metric">
-                <div class="label">True Peak</div>
-                <div class="value" id="micResultPeak">—</div>
+            <div class="status-body">
+              <div class="waveform-wrap">
+                <div class="waveform-canvas-holder" id="micResultWaveformHolder">
+                  <canvas id="micResultWaveformCanvas" class="waveform-canvas"></canvas>
+                  <div class="waveform-playhead" id="micResultPlayhead"></div>
+                </div>
+                <div class="player-controls">
+                  <button type="button" class="player-btn" id="micResultPlayBtn" aria-label="Reproduzir">
+                    <svg id="micResultPlayIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+                    <svg id="micResultPauseIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><rect x="6" y="5" width="4" height="14"></rect><rect x="14" y="5" width="4" height="14"></rect></svg>
+                  </button>
+                  <span class="player-time" id="micResultPlayerTime">0:00 / 0:00</span>
+                  <span class="player-hint">toque na onda para navegar</span>
+                </div>
               </div>
-              <div class="metric">
-                <div class="label">Nível de fala</div>
-                <div class="value" id="micResultRms">—</div>
+              <div class="metrics-row metrics-row-2">
+                <div class="metric">
+                  <div class="label">True Peak</div>
+                  <div class="value" id="micResultPeak">—</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Nível de fala</div>
+                  <div class="value" id="micResultRms">—</div>
+                </div>
               </div>
+              <ul class="tips" id="micResultTipsList"></ul>
             </div>
           </div>
         </div>

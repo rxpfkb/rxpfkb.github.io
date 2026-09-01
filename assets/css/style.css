@@ -791,19 +791,8 @@ input[type="file"] { display: none; }
 #micStopBtn { margin-top: 10px; }
 #micErrorBox { margin-top: 16px; }
 
-.mic-result {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-}
-
-.mic-result h4 {
-  font-family: var(--font-display);
-  font-size: 0.95rem;
-  font-weight: 600;
-  margin: 0 0 14px;
-  color: var(--text-muted);
-}
+/* .mic-result reuses .status-box styling directly (same card treatment as
+   the file-check result), so no extra rules are needed here. */
 
 /* ===== Responsive breakpoints ===== */
 @media (min-width: 480px) {

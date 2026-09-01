@@ -49,6 +49,10 @@
   var micResultPlayerTime = document.getElementById("micResultPlayerTime");
   var micResultPeak = document.getElementById("micResultPeak");
   var micResultRms = document.getElementById("micResultRms");
+  var micResultStatusIcon = document.getElementById("micResultStatusIcon");
+  var micResultStatusTitle = document.getElementById("micResultStatusTitle");
+  var micResultStatusSubtitle = document.getElementById("micResultStatusSubtitle");
+  var micResultTipsList = document.getElementById("micResultTipsList");
 
   // Metering approach (validated against 5 real Samsung S20 clips, cross-checked
   // against ffmpeg's EBU R128 loudness/true-peak filter — a broadcast-standard
@@ -430,6 +434,61 @@
     timeText: micResultPlayerTime
   });
 
+  // Shared verdict/tips builder — used for both an uploaded file and a live
+  // calibration test recording, so both get the same "smart" evaluation
+  // instead of the test recording only showing raw numbers.
+  function describeResult(r) {
+    if (r.status === "bad" && r.reason === "clip") {
+      return {
+        title: "Áudio com distorção (clipping)",
+        subtitle: "Há trechos com o áudio realmente estourado, causando distorção audível na gravação.",
+        tips: [
+          "Afaste um pouco o celular da fonte de som, ou peça para falar/tocar com menos intensidade perto do microfone.",
+          "Se possível, use um microfone de lapela ou externo — o microfone do celular satura fácil em ambientes muito altos.",
+          "Grave um teste de alguns segundos antes da gravação principal e ouça de fone para checar se há distorção.",
+          "Regrave o trecho, se possível, e envie novamente aqui para conferir."
+        ]
+      };
+    }
+    if (r.status === "bad" && r.reason === "headroom") {
+      return {
+        title: "Áudio sem margem para mixagem",
+        subtitle: "O nível está no teto digital praticamente o tempo todo (True Peak " + fmtDb(r.truePeakDb) + "), sinal de que o controle automático de ganho do celular comprimiu demais o áudio. Sem espaço para ganhar punch e corpo na mixagem.",
+        tips: [
+          "Afaste um pouco o celular da fonte de som — o AGC do celular sobe o ganho sozinho quando o som está baixo, e isso comprime tudo perto do teto.",
+          "Se o app de câmera tiver ajuste manual de ganho/sensibilidade de microfone, reduza um pouco antes de gravar.",
+          "Um microfone de lapela ou externo evita o AGC agressivo do microfone embutido do celular.",
+          "Regrave um teste curto e confira aqui antes da gravação definitiva."
+        ]
+      };
+    }
+    if (r.status === "low") {
+      return {
+        title: "Volume de áudio muito baixo",
+        subtitle: "O áudio está com nível muito baixo, o que pode gerar ruído de fundo ao ser realçado na edição.",
+        tips: [
+          "Aproxime-se mais da fonte de som ao gravar.",
+          "Evite gravar em ambientes muito silenciosos ou com o celular muito distante de quem está falando.",
+          "Se o app de câmera permitir, verifique se a sensibilidade do microfone não está reduzida."
+        ]
+      };
+    }
+    return {
+      title: "Áudio com boa margem para edição",
+      subtitle: "True Peak e nível de fala estão com margem saudável, sem sinais de compressão excessiva. Bom material para trabalhar na mixagem.",
+      tips: []
+    };
+  }
+
+  function fillTips(list, tips) {
+    list.innerHTML = "";
+    tips.forEach(function (text) {
+      var li = document.createElement("li");
+      li.textContent = text;
+      list.appendChild(li);
+    });
+  }
+
   function renderResult(r) {
     statusBox.classList.remove("state-good", "state-low", "state-bad", "status-hidden");
     statusBox.classList.add("state-" + r.status);
@@ -440,48 +499,15 @@
     var channelsLabel = r.channels === 1 ? "Mono" : r.channels === 2 ? "Estéreo" : r.channels + " canais";
     metricsCaption.textContent = fmtDuration(r.duration) + " · " + channelsLabel;
 
-    tipsList.innerHTML = "";
     // statusBox must already be visible (status-hidden removed above) so the
     // canvas has a real layout width to measure before we draw into it.
     drawWaveform(r);
     filePlayer.setup(r.audioBuffer);
 
-    if (r.status === "bad" && r.reason === "clip") {
-      statusTitle.textContent = "Áudio com distorção (clipping)";
-      statusSubtitle.textContent = "Há trechos com o áudio realmente estourado, causando distorção audível na gravação.";
-      [
-        "Afaste um pouco o celular da fonte de som, ou peça para falar/tocar com menos intensidade perto do microfone.",
-        "Se possível, use um microfone de lapela ou externo — o microfone do celular satura fácil em ambientes muito altos.",
-        "Grave um teste de alguns segundos antes da gravação principal e ouça de fone para checar se há distorção.",
-        "Regrave o trecho, se possível, e envie novamente aqui para conferir."
-      ].forEach(addTip);
-    } else if (r.status === "bad" && r.reason === "headroom") {
-      statusTitle.textContent = "Áudio sem margem para mixagem";
-      statusSubtitle.textContent = "O nível está no teto digital praticamente o tempo todo (True Peak " + fmtDb(r.truePeakDb) + "), sinal de que o controle automático de ganho do celular comprimiu demais o áudio. Sem espaço para ganhar punch e corpo na mixagem.";
-      [
-        "Afaste um pouco o celular da fonte de som — o AGC do celular sobe o ganho sozinho quando o som está baixo, e isso comprime tudo perto do teto.",
-        "Se o app de câmera tiver ajuste manual de ganho/sensibilidade de microfone, reduza um pouco antes de gravar.",
-        "Um microfone de lapela ou externo evita o AGC agressivo do microfone embutido do celular.",
-        "Regrave um teste curto e confira aqui antes da gravação definitiva."
-      ].forEach(addTip);
-    } else if (r.status === "low") {
-      statusTitle.textContent = "Volume de áudio muito baixo";
-      statusSubtitle.textContent = "O áudio está com nível muito baixo, o que pode gerar ruído de fundo ao ser realçado na edição.";
-      [
-        "Aproxime-se mais da fonte de som ao gravar.",
-        "Evite gravar em ambientes muito silenciosos ou com o celular muito distante de quem está falando.",
-        "Se o app de câmera permitir, verifique se a sensibilidade do microfone não está reduzida."
-      ].forEach(addTip);
-    } else {
-      statusTitle.textContent = "Arquivo com boa margem para edição";
-      statusSubtitle.textContent = "True Peak e nível de fala estão com margem saudável, sem sinais de compressão excessiva. Bom material para trabalhar na mixagem.";
-    }
-  }
-
-  function addTip(text) {
-    var li = document.createElement("li");
-    li.textContent = text;
-    tipsList.appendChild(li);
+    var msg = describeResult(r);
+    statusTitle.textContent = msg.title;
+    statusSubtitle.textContent = msg.subtitle;
+    fillTips(tipsList, msg.tips);
   }
 
   function showError(msg) {
@@ -827,13 +853,20 @@
   }
 
   function renderMicResult(r) {
-    micResultBox.classList.remove("status-hidden");
+    micResultBox.classList.remove("state-good", "state-low", "state-bad", "status-hidden");
+    micResultBox.classList.add("state-" + r.status);
+    micResultStatusIcon.innerHTML = ICONS[r.status];
     micResultPeak.textContent = fmtDb(r.truePeakDb);
     micResultRms.textContent = fmtDb(r.gatedLevelDb);
     // micResultBox must already be visible (status-hidden removed above) so
     // the canvas has a real layout width to measure before we draw into it.
     drawWaveformTo(micResultWaveformCanvas, r.waveMax, r.waveHot, r.columnCount);
     micResultPlayer.setup(r.audioBuffer);
+
+    var msg = describeResult(r);
+    micResultStatusTitle.textContent = msg.title;
+    micResultStatusSubtitle.textContent = msg.subtitle;
+    fillTips(micResultTipsList, msg.tips);
   }
 
   function stopMicCalibration() {
@@ -867,11 +900,31 @@
   });
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
     navigator.mediaDevices.addEventListener("devicechange", function () {
-      if (mic.running) refreshMicDeviceList(micDeviceSelect.value);
+      refreshMicDeviceList(micDeviceSelect.value);
     });
   }
   window.addEventListener("pagehide", stopMicCalibration);
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) stopMicCalibration();
   });
+
+  // Browsers only reveal real device names/count via enumerateDevices()
+  // after mic permission has been granted at least once — before that they
+  // report a single anonymous entry, no matter when it's called. So to show
+  // the full device list right away instead of only after "Iniciar", prime
+  // permission on load: request the mic just long enough to read the
+  // device list, then release it immediately without starting the meter.
+  function primeMicDeviceList() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(function (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        refreshMicDeviceList();
+      })
+      .catch(function () {
+        // Denied or dismissed — leave the generic option; "Iniciar
+        // monitoramento" will prompt again if the user wants to retry.
+      });
+  }
+  primeMicDeviceList();
 })();
