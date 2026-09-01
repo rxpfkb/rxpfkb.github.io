@@ -1,4 +1,4 @@
-const CACHE_NAME = "rp-site-v5";
+const CACHE_NAME = "rp-site-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -28,20 +28,25 @@ self.addEventListener("activate", function (event) {
   self.clients.claim();
 });
 
+// Network-first: this is a small, frequently-updated tool, so freshness
+// matters more than shaving a request on a fast connection. Every online
+// visit gets the latest file straight from the server; the cache only
+// kicks in as an offline fallback. (An earlier cache-first version made
+// updates invisible until a *second* reload after the new files quietly
+// synced in the background — this fixes that.)
 self.addEventListener("fetch", function (event) {
   var req = event.request;
   if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(req).then(function (cached) {
-      var network = fetch(req).then(function (res) {
+    fetch(req)
+      .then(function (res) {
         if (res && res.ok) {
           var copy = res.clone();
           caches.open(CACHE_NAME).then(function (cache) { cache.put(req, copy); });
         }
         return res;
-      }).catch(function () { return cached; });
-      return cached || network;
-    })
+      })
+      .catch(function () { return caches.match(req); })
   );
 });

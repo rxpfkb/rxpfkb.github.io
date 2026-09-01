@@ -800,6 +800,7 @@
         source.connect(mic.analyser);
         mic.peakHoldDb = MIC_METER_FLOOR_DB;
         mic.running = true;
+        window.__appBusy = true; // defer any pending SW-update reload until monitoring stops
         resetMicWaveform();
         micResultBox.classList.add("status-hidden");
         micResultPlayer.stop();
@@ -830,6 +831,7 @@
       })
       .catch(function (err) {
         mic.running = false;
+        window.__appBusy = false;
         micErrorBox.textContent = "Não foi possível acessar o microfone. Verifique se você deu permissão ao navegador. Detalhe: " + (err && err.message ? err.message : err);
         micErrorBox.classList.remove("status-hidden");
       });
@@ -871,6 +873,7 @@
 
   function stopMicCalibration() {
     mic.running = false;
+    window.__appBusy = false;
     if (mic.rafId) { cancelAnimationFrame(mic.rafId); mic.rafId = null; }
     if (mic.processor) { mic.processor.disconnect(); mic.processor.onaudioprocess = null; mic.processor = null; }
     if (mic.silentGain) { mic.silentGain.disconnect(); mic.silentGain = null; }

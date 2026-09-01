@@ -1,6 +1,25 @@
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", function () {
-    navigator.serviceWorker.register("sw.js").catch(function () { /* offline install is a bonus, not required */ });
+    navigator.serviceWorker.register("sw.js").then(function (reg) {
+      // Don't wait for the browser's own (up to ~24h) background check —
+      // ask right now whether sw.js changed, so updates show up on the
+      // very next visit instead of some indeterminate later one.
+      reg.update().catch(function () {});
+    }).catch(function () { /* offline install is a bonus, not required */ });
+
+    // When a new service worker takes over, reload once to pick up the
+    // matching fresh HTML/CSS/JS as a set. Deferred while the mic monitor
+    // is running so an update never yanks the page out from under an
+    // in-progress test — see audio-check.js's window.__appBusy.
+    var reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function () {
+      if (reloaded) return;
+      (function waitUntilIdle() {
+        if (window.__appBusy) { setTimeout(waitUntilIdle, 1000); return; }
+        reloaded = true;
+        window.location.reload();
+      })();
+    });
   });
 }
 
